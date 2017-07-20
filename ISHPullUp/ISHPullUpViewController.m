@@ -15,11 +15,9 @@ const CGFloat ISHPullUpViewControllerDefaultTopMargin = 20.0;
 
 @interface ISHPullUpViewController ()<UIGestureRecognizerDelegate>
 @property (nonatomic, weak) UIPanGestureRecognizer *panGesture;
-@property (nonatomic, weak) UITapGestureRecognizer *dimmingViewTapGesture;
 @property (nonatomic) CGFloat bottomHeight;
 @property (nonatomic) CGFloat bottomHeightAtStartOfGesture;
 @property (nonatomic) ISHPullUpState stateAtStartOfGesture;
-@property (nonatomic, weak) ISHPullUpDimmingView *dimmingView;
 @property (nonatomic) CGFloat minimumBottomHeightCached;
 @property (nonatomic) CGFloat maximumBottomHeightCached;
 @property (nonatomic) BOOL firstAppearCompleted;
@@ -59,8 +57,6 @@ const CGFloat ISHPullUpViewControllerDefaultTopMargin = 20.0;
     self.snapToEnds = YES;
     self.snapThreshold = ISHPullUpViewControllerDefaultSnapThreshold;
     self.topMargin = ISHPullUpViewControllerDefaultTopMargin;
-    self.dimmingColor = [UIColor colorWithWhite:0 alpha:0.4];
-    self.dimmingThreshold = 0.5;
     self.bottomHiddenMargin = 10.0;
 
     ISHPullUpAnimationConfiguration config;
@@ -124,7 +120,6 @@ const CGFloat ISHPullUpViewControllerDefaultTopMargin = 20.0;
 
 - (void)updateGestureEnabledState {
     self.panGesture.enabled = !self.locked && !self.bottomHidden;
-    self.dimmingViewTapGesture.enabled = self.panGesture.enabled;
 }
 
 #pragma mark Pan Gesture
@@ -236,7 +231,7 @@ const CGFloat ISHPullUpViewControllerDefaultTopMargin = 20.0;
 
     _contentViewController = contentViewController;
     // insert contentViewController's view below dimming view or bottomViewController.view if any of those are loaded
-    [self addViewOfSubViewController:_contentViewController belowView:self.dimmingView ?: self.bottomViewController.view];
+    [self addViewOfSubViewController:_contentViewController belowView: self.bottomViewController.view];
 }
 
 - (void)setBottomViewController:(UIViewController *)bottomViewController {
@@ -255,13 +250,6 @@ const CGFloat ISHPullUpViewControllerDefaultTopMargin = 20.0;
     if (self.isViewLoaded) {
         [self setupPanGestureRecognizerForViewController:bottomViewController];
         [self updateCachedHeightsWithSize:self.view.bounds.size];
-        // update rounded view on dimming view if needed
-        if (self.dimmingView && [self.bottomViewController.view isKindOfClass:[ISHPullUpRoundedView class]]) {
-            self.dimmingView.roundedView = (ISHPullUpRoundedView *)self.bottomViewController.view;
-        } else if (self.dimmingView && !self.bottomViewController) {
-            // remove dimming view if the bottomViewController was removed
-            [self setDimmingViewHidden:YES height:self.bottomHeight];
-        }
         
         if (self.bottomHeight > self.maximumBottomHeightCached) {
             [self setState:ISHPullUpStateExpanded animated:YES];
@@ -397,7 +385,6 @@ const CGFloat ISHPullUpViewControllerDefaultTopMargin = 20.0;
     }
 
     void (^updateBlock)() = ^{
-        [self setDimmingViewHidden:[self dimmingViewShouldBeHidden] height:self.bottomHeight];
         [self updateViewLayoutBottomHeight:self.bottomHeight withSize:self.view.bounds.size];
     };
 
@@ -443,9 +430,7 @@ const CGFloat ISHPullUpViewControllerDefaultTopMargin = 20.0;
         return;
     }
 
-    CGFloat oldHeight = self.bottomHeight;
     self.bottomHeight = bottomHeight;
-    BOOL dimmingViewHidden = [self dimmingViewShouldBeHidden];
 
     void (^updateBlock)();
     updateBlock = ^{
@@ -453,7 +438,6 @@ const CGFloat ISHPullUpViewControllerDefaultTopMargin = 20.0;
 
         // setup (hide) dimming view with oldheight
         // this allows the animation to start from the old height and animate along
-        [self setDimmingViewHidden:dimmingViewHidden height:oldHeight];
         [self updateViewLayoutBottomHeight:bottomHeight withSize:self.view.bounds.size];
 
         if (animated) {
@@ -480,22 +464,6 @@ const CGFloat ISHPullUpViewControllerDefaultTopMargin = 20.0;
                                  }];
 }
 
-- (BOOL)dimmingViewShouldBeHidden {
-    if (self.bottomHidden) {
-        return YES;
-    }
-
-    CGFloat maximumHeightOverMinimum = self.maximumBottomHeightCached - self.minimumBottomHeightCached;
-
-    if (!maximumHeightOverMinimum) {
-        // if the view cannot be extended beyond minimum always hide dimming view
-        return YES;
-    }
-
-    CGFloat heightOverMinimum = self.bottomHeight - self.minimumBottomHeightCached;
-    return heightOverMinimum < (self.dimmingThreshold * maximumHeightOverMinimum);
-}
-
 - (void)updateViewLayoutBottomHeight:(CGFloat)bottomHeight withSize:(CGSize)size {
     if (!self.isViewLoaded) {
         // avoid loading the view controllers' views prematurely
@@ -506,7 +474,6 @@ const CGFloat ISHPullUpViewControllerDefaultTopMargin = 20.0;
 
     // content fills entire view
     [self.contentViewController.view setFrame:bounds];
-    [self updateLayoutOfDimmingView:self.dimmingView bottomHeight:bottomHeight];
 
     CGRect bottomFrame = CGRectZero;
     switch (self.bottomLayoutMode) {
@@ -614,96 +581,6 @@ const CGFloat ISHPullUpViewControllerDefaultTopMargin = 20.0;
 
 // status bar should use light style if dimmed
 - (UIStatusBarStyle)preferredStatusBarStyle {
-    if (self.dimmingView.alpha) {
-        return UIStatusBarStyleLightContent;
-    }
-
     return self.contentViewController.preferredStatusBarStyle;
 }
-
-- (void)setDimmingColor:(UIColor *)dimmingColor {
-    _dimmingColor = dimmingColor;
-
-    if (!dimmingColor) {
-        // hide any current dimming view
-        [self setDimmingViewHidden:YES height:self.bottomHeight];
-    }
-}
-
-- (void)setDimmingViewHidden:(BOOL)hidden height:(CGFloat)height {
-    if (!self.isViewLoaded || (!hidden && !self.dimmingColor)) {
-        // view is not loaded or dimming is disabled
-        return;
-    }
-
-    BOOL dimmingViewIsNotLoaded = (self.dimmingView == nil);
-    BOOL dimmingViewIsInvisible = (self.dimmingView.alpha == 0);
-
-    // if hidden matches the current load state of the dimming view
-    // or if hidden matches the current visibilty of the dimming view
-    // do nothing
-    if ((!hidden == !dimmingViewIsNotLoaded) || (!hidden == !dimmingViewIsInvisible)) {
-        return;
-    }
-
-    UIView *dimmingView = [self dimmingViewWithBottomHeight:height];
-    [UIView animateWithDuration:0.25
-                          delay:0
-                        options:UIViewAnimationOptionAllowUserInteraction | UIViewAnimationOptionBeginFromCurrentState
-                     animations:^{
-                         [dimmingView setAlpha:hidden ? 0.0 : 1.0];
-                         [self setNeedsStatusBarAppearanceUpdate];
-                     } completion:^(BOOL finished) {
-                         if (hidden && finished) {
-                             [dimmingView removeFromSuperview];
-                         }
-                     }];
-}
-
-// Returns the currently loaded dimming view or loads a new one.
-- (ISHPullUpDimmingView *)dimmingViewWithBottomHeight:(CGFloat)bottomHeight {
-    ISHPullUpDimmingView *dimmingView = self.dimmingView;
-
-    if (dimmingView) {
-        return dimmingView;
-    }
-
-    // setup new dimming view
-    dimmingView = [ISHPullUpDimmingView new];
-    [dimmingView setColor:self.dimmingColor];
-    [dimmingView setAlpha:0];
-    UITapGestureRecognizer *collapseTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleDimmingViewTapGesture:)];
-    self.dimmingViewTapGesture = collapseTap;
-    collapseTap.enabled = !self.locked;
-    [dimmingView addGestureRecognizer:collapseTap];
-
-    // handle rounded view if root view of bottom view controller is rounded
-    if ([self.bottomViewController.view isKindOfClass:[ISHPullUpRoundedView class]]) {
-        dimmingView.roundedView = (ISHPullUpRoundedView *)self.bottomViewController.view;
-    }
-
-    // add dimming view to view hierachy
-    if ([self.bottomViewController.view isDescendantOfView:self.view]) {
-        [self.view insertSubview:dimmingView belowSubview:self.bottomViewController.view];
-    } else {
-        [self.view addSubview:dimmingView];
-    }
-    [self setDimmingView:dimmingView];
-
-    // setup initial frame without animation (may be called within an animation block)
-    [UIView performWithoutAnimation:^{
-        [self updateLayoutOfDimmingView:dimmingView bottomHeight:bottomHeight];
-    }];
-
-    return dimmingView;
-}
-
-- (void)updateLayoutOfDimmingView:(UIView *)dimmingView bottomHeight:(CGFloat)bottomHeight {
-    [dimmingView setFrame:UIEdgeInsetsInsetRect(self.contentViewController.view.frame, UIEdgeInsetsMake(0, 0, bottomHeight, 0))];
-}
-
-- (void)handleDimmingViewTapGesture:(UITapGestureRecognizer *)tap {
-    [self setState:ISHPullUpStateCollapsed animated:YES];
-}
-
 @end
