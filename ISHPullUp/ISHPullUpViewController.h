@@ -29,10 +29,7 @@ extern const CGFloat ISHPullUpViewControllerDefaultMinimumHeight;
  *   Informs the delegate that the area overlayed by the bottomViewController's view changed.
  *
  *   This delegate method should be used to adjust the contentViewController's
- *   layout for the area overlayed by the bottomViewController.
- *   On iOS 11 the provided edgeInsets should be used as the contentViewController's
- *   additionalSafeAreaInset. On iOS 10 and earlier it can be used as the layoutMargin
- *   of a root view that covers the entire contentViewController's view's bounds.
+ *   layout for the area overlayed by the bottomViewController. 
  *
  *   This method may be called from an animation block.
  *
@@ -205,7 +202,7 @@ typedef struct ISHPullUpAnimationConfiguration ISHPullUpAnimationConfiguration;
  *  view to be completely hidden.
  *  Default is 10.0.
  */
-@property (nonatomic) CGFloat bottomHiddenMargin;
+@property (nonatomic) BOOL bottomHiddenMargin;
 
 /// The contentDelegate should be used to adjust the contentViewController's
 /// layout for the area overlayed by the bottomViewController.
